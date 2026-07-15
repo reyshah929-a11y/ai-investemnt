@@ -2,9 +2,9 @@ name: Run Alpaca ML Bot
 
 on:
   schedule:
-    # Runs every hour from 10:30 AM to 4:30 PM EST, Monday through Friday
-    - cron: '30 14-20 * * 1-5'
-  workflow_dispatch: # Keeps the manual run button active too!
+    # Runs at minutes 0, 15, 30, and 45 of every hour from 10:00 AM to 4:45 PM EST, Mon-Fri
+    - cron: '0,15,30,45 14-20 * * 1-5'
+  workflow_dispatch: # Allows manual runs anytime
 jobs:
   run-bot:
     runs-on: ubuntu-latest
