@@ -12,19 +12,19 @@ from alpaca.trading.enums import OrderSide, OrderType, TimeInForce
 # ----------------- CONFIGURATION -----------------
 # The S&P 100 (100 largest, most stable US companies)
 TICKERS = [
-    "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "GOOG", "META", "BRK.B", "TSLA", "UNH",
-    "JLI", "JPM", "XOM", "V", "PG", "MA", "AVGO", "HD", "HD", "CVX",
-    "MRK", "ABBV", "ADBE", "COST", "PEP", "KO", "TMO", "MCD", "WMT", "BAC",
-    "CSCO", "CRM", "ACN", "LLY", "ABT", "ORCL", "VZ", "INTC", "TXN", "QCOM",
-    "CMCSA", "AMGN", "NFLX", "AMD", "DIS", "PM", "NKE", "COP", "HON", "T",
-    "IBM", "JCI", "GE", "UNP", "LOW", "AXP", "INTU", "SPGI", "SBUX", "EL",
-    "PLD", "AMAT", "MDLZ", "CAT", "GILD", "RTX", "LMT", "BKNG", "TJX", "ADI",
-    "C", "ISRG", "SYK", "REGN", "MDG", "VRTX", "ADP", "MMC", "CI", "DHR",
-    "MU", "LRCX", "SLB", "GEHC", "NOW", "PANW", "SNPS", "MELI", "CDNS", "EQIX",
-    "SO", "D", "KDP", "CL", "WM", "NOC", "WM", "BSX", "GPN", "HCA"
+    "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "GOOG", "META", "BRK-B", "TSLA", "UNH",
+    "JNJ", "JPM", "XOM", "V", "PG", "MA", "AVGO", "HD", "CVX", "MRK", 
+    "ABBV", "ADBE", "COST", "PEP", "KO", "TMO", "MCD", "WMT", "BAC", "CSCO", 
+    "CRM", "ACN", "LLY", "ABT", "ORCL", "VZ", "INTC", "TXN", "QCOM", "CMCSA", 
+    "AMGN", "NFLX", "AMD", "DIS", "PM", "NKE", "COP", "HON", "T", "IBM", 
+    "JCI", "GE", "UNP", "LOW", "AXP", "INTU", "SPGI", "SBUX", "EL", "PLD", 
+    "AMAT", "MDLZ", "CAT", "GILD", "RTX", "LMT", "BKNG", "TJX", "ADI", "C", 
+    "ISRG", "SYK", "REGN", "VRTX", "ADP", "MMC", "CI", "DHR", "MU", "LRCX", 
+    "SLB", "GEHC", "NOW", "PANW", "SNPS", "MELI", "CDNS", "EQIX", "SO", "D", 
+    "KDP", "CL", "WM", "NOC", "BSX", "GPN", "HCA"
 ]
 
-# Clean any potential duplicate tickers or formatting issues
+# Clean up ticker formats to avoid errors
 TICKERS = list(set([t.replace(".", "-") for t in TICKERS]))[:100]
 
 # API Credentials pulled securely from GitHub Secrets
@@ -37,11 +37,15 @@ class MLMultiTrader:
         self.trading_client = TradingClient(API_KEY, SECRET_KEY, paper=True)
         
     def get_historical_data(self, ticker):
-        """Downloads historical data for a specific ticker."""
-        # Grab past 60 days of hourly data for feature modeling
+        """Downloads historical data and ensures flat columns."""
         df = yf.download(ticker, period="60d", interval="1h", progress=False)
         if df.empty or len(df) < 20:
             return None
+        
+        # DOUBLE CHECK / FIX: Flatten multi-level columns if present in newer yfinance versions
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
         return df
 
     def create_features(self, df):
