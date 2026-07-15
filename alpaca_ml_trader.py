@@ -29,25 +29,29 @@ TICKERS = list(set([t.replace(".", "-") for t in TICKERS]))[:100]
 API_KEY = os.environ.get("ALPACA_KEY")
 SECRET_KEY = os.environ.get("ALPACA_SECRET")
 
-class MLHourlyAdaptiveTrader:
+class ML15MinAdaptiveTrader:
     def __init__(self):
         self.trading_client = TradingClient(API_KEY, SECRET_KEY, paper=True)
         
     def get_historical_data(self, ticker):
-        """Downloads historical data and cuts it to exactly the last 90 hours."""
-        # 20 days covers ~140 trading hours, ensuring we easily have enough to extract 90
-        df = yf.download(ticker, period="20d", interval="1h", progress=False)
+        """Downloads historical 15-minute interval data and cuts it to the last 90 bars."""
+        # 10 days of trading covers roughly 260 candles (15-min intervals)
+        df = yf.download(
+            ticker, 
+            period="10d", 
+            interval="15m", # CHANGED: Now pulls 15-minute intervals instead of 1h
+            progress=False, 
+            multi_level_index=False
+        )
+        
         if df.empty or len(df) < 90:
             return None
-        
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
             
-        # Cut to exactly the last 90 trading hours
+        # Cut to exactly the last 90 trading candles (each representing 15 minutes)
         return df.tail(90)
 
     def create_features(self, df):
-        """Calculates indicators for the Machine Learning model."""
+        """Calculates indicators based on the 15-minute intervals."""
         df = df.copy()
         df['SMA_15'] = df['Close'].rolling(window=15).mean()
         df['Returns'] = df['Close'].pct_change()
@@ -55,28 +59,26 @@ class MLHourlyAdaptiveTrader:
         df.dropna(inplace=True)
         return df
 
-    def evaluate_hourly_mistakes(self, df):
+    def evaluate_recent_mistakes(self, df):
         """
-        LEARNING LOOP: Simulates trading over the last 24 hours of market time.
+        LEARNING LOOP: Simulates trading over the last 24 periods (6 hours of trading).
         Finds out exactly when the AI made mistakes and calculates our current "trust score."
         """
         features = ['SMA_15', 'Returns']
         X = df[features].values
         y = df['Target'].values
         
-        test_hours = 24 # Evaluate its decisions hour-by-hour over the last 24 trading hours
-        if len(df) < (test_hours + 10):
+        test_intervals = 24 # Evaluate decisions candle-by-candle over the last 24 periods
+        if len(df) < (test_intervals + 10):
             return 0.50, 0 
 
         mistakes = 0
         correct = 0
         
-        for i in range(len(df) - test_hours, len(df) - 1):
-            # Retrain the model on past hourly data up to point 'i'
+        for i in range(len(df) - test_intervals, len(df) - 1):
             test_model = RandomForestClassifier(n_estimators=50, random_state=42)
             test_model.fit(X[:i], y[:i])
             
-            # Predict this hour's movement
             pred = test_model.predict(X[i].reshape(1, -1))[0]
             if pred == y[i]:
                 correct += 1
@@ -86,8 +88,8 @@ class MLHourlyAdaptiveTrader:
         accuracy = correct / (correct + mistakes) if (correct + mistakes) > 0 else 0.50
         return accuracy, mistakes
 
-    def predict_next_hour(self, df):
-        """Trains on all data to predict the movement for the upcoming hour."""
+    def predict_next_interval(self, df):
+        """Trains on all data to predict the movement for the upcoming 15 minutes."""
         features = ['SMA_15', 'Returns']
         X = df[features].values
         y = df['Target'].values
@@ -106,7 +108,7 @@ class MLHourlyAdaptiveTrader:
         return [pos.symbol for pos in positions]
 
     def execute_trade(self, ticker, prediction, accuracy, mistakes, owned_tickers):
-        """Executes trades only if the AI has proven to be reliable over the last 24 hours."""
+        """Executes trades only if the AI has proven to be reliable over the last 24 intervals."""
         is_owned = ticker in owned_tickers
         ACCURACY_THRESHOLD = 0.55 # Must maintain a 55%+ accuracy rate to place new trades
         
@@ -121,9 +123,9 @@ class MLHourlyAdaptiveTrader:
                         time_in_force=TimeInForce.DAY
                     )
                     self.trading_client.submit_order(buy_order)
-                    print(f"🛒 {ticker}: BUY order! Hourly Accuracy: {accuracy:.1%} (Mistakes in last 24h: {mistakes})")
+                    print(f"🛒 {ticker}: BUY order! 15m Accuracy: {accuracy:.1%} (Mistakes in last 24 intervals: {mistakes})")
                 else:
-                    print(f"🛑 {ticker}: BLOCKED BUY (Hourly Accuracy: {accuracy:.1%} | Mistakes: {mistakes}) - Safeguarding capital.")
+                    print(f"🛑 {ticker}: BLOCKED BUY (15m Accuracy: {accuracy:.1%} | Mistakes: {mistakes}) - Safeguarding capital.")
                 
             elif prediction == "DOWN" and is_owned:
                 # If prediction flips to DOWN, sell to protect cash
@@ -135,7 +137,7 @@ class MLHourlyAdaptiveTrader:
                     time_in_force=TimeInForce.DAY
                 )
                 self.trading_client.submit_order(sell_order)
-                print(f"🔥 {ticker}: SELLING position (Hourly prediction turned DOWN)!")
+                print(f"🔥 {ticker}: SELLING position (15m prediction turned DOWN)!")
                 
             else:
                 print(f"😴 {ticker}: Holding state (Pred: {prediction}, Owned: {is_owned}, Current Mistakes: {mistakes})")
@@ -144,7 +146,7 @@ class MLHourlyAdaptiveTrader:
             print(f"❌ Error executing transaction for {ticker}: {e}")
 
     def run(self):
-        print("🤖 Starting Hourly Self-Correcting Portfolio Scan (90-Hour Window)...")
+        print("🤖 Starting 15-Minute Self-Correcting Portfolio Scan...")
         
         try:
             owned_tickers = self.get_portfolio_positions()
@@ -156,27 +158,27 @@ class MLHourlyAdaptiveTrader:
         for idx, ticker in enumerate(TICKERS, 1):
             df = self.get_historical_data(ticker)
             if df is None:
-                print(f"⚠️ Skipped {ticker} (Insufficient hourly data)")
+                print(f"⚠️ Skipped {ticker} (Insufficient 15m data)")
                 continue
                 
             try:
                 df_features = self.create_features(df)
                 
                 # Evaluate recent performance & mistake count
-                accuracy, mistakes = self.evaluate_hourly_mistakes(df_features)
+                accuracy, mistakes = self.evaluate_recent_mistakes(df_features)
                 
-                # Predict next hour's direction
-                prediction = self.predict_next_hour(df_features)
+                # Predict next interval's direction
+                prediction = self.predict_next_interval(df_features)
                 
                 # Execute filtered trades
-                print(f"[{idx}/100] Hourly Analysis for {ticker}...")
+                print(f"[{idx}/100] 15m Analysis for {ticker}...")
                 self.execute_trade(ticker, prediction, accuracy, mistakes, owned_tickers)
                 
             except Exception as e:
-                print(f"⚠️ Error processing hourly trade run for {ticker}: {e}")
+                print(f"⚠️ Error processing 15m trade run for {ticker}: {e}")
 
-        print("\n🎉 Hourly adaptive cycle run complete!")
+        print("\n🎉 15-Minute adaptive cycle run complete!")
 
 if __name__ == "__main__":
-    bot = MLHourlyAdaptiveTrader()
+    bot = ML15MinAdaptiveTrader()
     bot.run()
