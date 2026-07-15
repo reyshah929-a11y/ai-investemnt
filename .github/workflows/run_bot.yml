@@ -1,0 +1,29 @@
+name: Run Alpaca ML Bot
+
+on:
+  schedule:
+    # Runs at 20:30 UTC (which is 3:30 PM EST / 12:30 PM PST) Monday-Friday
+    - cron: '30 20 * * 1-5'
+  workflow_dispatch: # This adds a manual "Play" button so you can test it anytime!
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install alpaca-py pandas scikit-learn yfinance
+
+      - name: Run script
+        env:
+          ALPACA_KEY: ${{ secrets.ALPACA_KEY }}
+          ALPACA_SECRET: ${{ secrets.ALPACA_SECRET }}
+        run: python alpaca_ml_trader.py
