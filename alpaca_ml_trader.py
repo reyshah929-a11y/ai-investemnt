@@ -27,9 +27,9 @@ TICKERS = [
 # Clean up ticker formats to avoid errors
 TICKERS = list(set([t.replace(".", "-") for t in TICKERS]))[:100]
 
-# API Credentials pulled securely from GitHub Secrets
-API_KEY = os.environ.get("ALPACA_API_KEY")
-SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY")
+# API Credentials - MATCHED TO YOUR EXACT GITHUB SECRETS: "ALPACA_KEY" and "ALPACA_SECRET"
+API_KEY = os.environ.get("ALPACA_KEY")
+SECRET_KEY = os.environ.get("ALPACA_SECRET")
 
 class MLMultiTrader:
     def __init__(self):
@@ -42,7 +42,7 @@ class MLMultiTrader:
         if df.empty or len(df) < 20:
             return None
         
-        # DOUBLE CHECK / FIX: Flatten multi-level columns if present in newer yfinance versions
+        # Flatten multi-level columns if present in newer yfinance versions
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
